@@ -239,7 +239,7 @@ export default function App() {
         <div className="flex justify-between items-center w-full px-6 py-4 max-w-screen-2xl mx-auto font-headline tracking-tight">
           <div className="flex items-center gap-4">
             <span className="text-2xl font-black tracking-tighter text-primary-container border-2 border-primary-container px-3 py-1 rounded-sm shadow-[0_0_15px_rgba(255,204,0,0.2)]">
-              FINGAS
+              FINGASCAN
             </span>
           </div>
           <nav className="hidden md:flex items-center gap-6">
@@ -256,7 +256,7 @@ export default function App() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-grow flex flex-col justify-center px-4 sm:px-10 md:px-20 py-12 max-w-[1600px] mx-auto w-full">
+      <main className="grow flex flex-col justify-center px-4 sm:px-10 md:px-20 py-12 max-w-400 mx-auto w-full">
         <div className={`flex flex-col lg:flex-row gap-12 lg:gap-24 items-center justify-center w-full transition-all duration-700 ease-in-out`}>
           
           {/* Left Column: Scanner */}
@@ -276,7 +276,7 @@ export default function App() {
             </div>
 
             {/* Scanner Viewport */}
-            <div className="relative w-72 h-72 sm:w-80 sm:h-80  rounded-3xl bg-surface-lowest flex items-center justify-center p-2 scanner-glow outline outline-1 outline-outline-variant/20 overflow-hidden group">
+            <div className="relative w-72 h-72 sm:w-80 sm:h-80  rounded-3xl bg-surface-lowest flex items-center justify-center p-2 scanner-glow outline outline-outline-variant/20 overflow-hidden group">
               <div className="absolute inset-0 rounded-3xl glass-panel z-10 pointer-events-none"></div>
               
               <div className="relative w-full h-full rounded-[1.25rem] bg-surface overflow-hidden border-2 border-primary-container/30">
@@ -339,7 +339,7 @@ export default function App() {
             </div>
 
             {/* Action Area */}
-            <div className="w-full max-w-[280px] mt-4 flex flex-col items-center">
+            <div className="w-full max-w-70 mt-4 flex flex-col items-center">
               {errorMessage && (
                 <div className="w-full mb-4 px-4 py-3 rounded-lg border border-error/50 bg-error/10 text-error flex gap-2 items-start opacity-100 shadow-[0_0_15px_rgba(255,180,171,0.15)] animate-in fade-in slide-in-from-bottom-2">
                   <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
@@ -399,7 +399,7 @@ export default function App() {
                 className="flex-col w-full max-w-lg flex shrink-0"
               >
                 {/* Result Card */}
-                <div className="relative w-full bg-surface-low rounded-xl p-6 sm:p-8 flex flex-col min-h-[400px] sm:min-h-[500px] border border-outline-variant/20 shadow-[0_20px_40px_rgba(241,193,0,0.02)] overflow-hidden">
+                <div className="relative w-full bg-surface-low rounded-xl p-6 sm:p-8 flex flex-col min-h-100 sm:min-h-125 border border-outline-variant/20 shadow-[0_20px_40px_rgba(241,193,0,0.02)] overflow-hidden">
                   {/* Decorative Glow */}
                   <div className="absolute -right-20 -top-20 w-64 h-64 bg-primary-container rounded-full blur-[100px] opacity-10 pointer-events-none"></div>
                   
@@ -419,7 +419,7 @@ export default function App() {
                   </div>
 
                   {/* Artwork Canvas */}
-                  <div className="flex-grow flex items-center justify-center w-full bg-surface-lowest rounded-lg mb-6 sm:mb-8 p-4 relative overflow-hidden group border border-outline-variant/10 shadow-[inset_0_4px_20px_rgba(0,0,0,0.5)]">
+                  <div className="grow flex items-center justify-center w-full bg-surface-lowest rounded-lg mb-6 sm:mb-8 p-4 relative overflow-hidden group border border-outline-variant/10 shadow-[inset_0_4px_20px_rgba(0,0,0,0.5)]">
                     
                     {/* Displaying our actively composite extracted Map */}
                     <img
@@ -428,10 +428,10 @@ export default function App() {
                       className="absolute inset-0 w-full h-full object-cover opacity-90 transition-opacity duration-500 hover:scale-105"
                     />
                     
-                    <div className="absolute inset-0 bg-gradient-to-t from-surface-lowest via-transparent to-surface-lowest/50 pointer-events-none"></div>
+                    <div className="absolute inset-0 bg-linear-to-t from-surface-lowest via-transparent to-surface-lowest/50 pointer-events-none"></div>
                     
                     <div className="relative z-10 text-center flex flex-col items-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                      <Fingerprint className="w-10 h-10 text-primary-container mb-2 stroke-[1] drop-shadow-lg" />
+                      <Fingerprint className="w-10 h-10 text-primary-container mb-2 stroke-1 drop-shadow-lg" />
                       <span className="label-text text-xs text-primary-container drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
                         COMPOSITE PATTERN
                       </span>
@@ -444,7 +444,7 @@ export default function App() {
                       <span className="text-[10px] sm:text-xs text-on-surface-variant font-mono tracking-wider">
                         HASH: 0x{Math.random().toString(16).substring(2, 10).toUpperCase()}
                       </span>
-                      <span className="text-[10px] sm:text-xs text-on-surface-variant font-mono tracking-wider text-primary-container">
+                      <span className="text-[10px] sm:text-xs font-mono tracking-wider text-primary-container">
                          QUALITY: {(85 + Math.random() * 14).toFixed(1)}%
                       </span>
                     </div>
