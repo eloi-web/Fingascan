@@ -1,0 +1,6 @@
+{
+  "name": "Digital Alchemist Scanner",
+  "description": "Real-time biometric scanner simulator using the device camera.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": []
+}

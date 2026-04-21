@@ -1,0 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-background-base: #131313;
+  --color-surface-lowest: #0e0e0e;
+  --color-surface-low: #1c1b1b;
+  --color-surface: #201f1f;
+  --color-surface-high: #2a2a2a;
+  --color-surface-highest: #353534;
+
+  --color-primary: #ffedc3;
+  --color-primary-container: #ffcc00;
+  --color-on-primary-container: #6f5700;
+  --color-primary-container-hover: #f1c100;
+
+  --color-outline-variant: #4e4632;
+
+  --color-on-surface: #e5e2e1;
+  --color-on-surface-variant: #d2c5ab;
+
+  --font-headline: 'Space Grotesk', sans-serif;
+  --font-body: 'Plus Jakarta Sans', sans-serif;
+}
+
+@layer utilities {
+  .font-headline { font-family: var(--font-headline); }
+  .font-body { font-family: var(--font-body); }
+  .label-text { font-family: var(--font-headline); text-transform: uppercase; letter-spacing: 0.1em; }
+
+  .gold-gradient { background: linear-gradient(135deg, var(--color-primary-container) 0%, var(--color-primary-container-hover) 100%); }
+  .glass-panel { background: rgba(53, 53, 52, 0.4); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+  .scanner-glow { box-shadow: 0 0 40px rgba(255, 204, 0, 0.15); }
+  .btn-hover-glow:hover { box-shadow: 0 0 15px rgba(255, 204, 0, 0.4); }
+
+  .bg-grid-pattern {
+    background-image: linear-gradient(rgba(241,193,0,0.15) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(241,193,0,0.15) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+}
+
+body {
+  background-color: var(--color-background-base);
+  color: var(--color-on-surface);
+  font-family: var(--font-body);
+}
