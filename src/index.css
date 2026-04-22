@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,1..1000&display=swap');
 @import "tailwindcss";
 
 @font-face {
@@ -27,8 +27,8 @@
   --color-on-surface: #e5e2e1;
   --color-on-surface-variant: #d2c5ab;
 
-  --font-headline: 'Dynamix', 'Space Grotesk', sans-serif;
-  --font-body: 'Plus Jakarta Sans', sans-serif;
+  --font-headline: 'Dynamix', sans-serif;
+  --font-body: 'Google Sans Flex', sans-serif;
 }
 
 @layer utilities {
@@ -41,7 +41,7 @@
   }
 
   .label-text {
-    font-family: var(--font-headline);
+    font-family: var(--font-body);
     text-transform: uppercase;
     letter-spacing: 0.1em;
   }
