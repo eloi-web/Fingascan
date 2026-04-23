@@ -2,6 +2,100 @@ import { useState, useRef, useEffect } from 'react';
 import { Fingerprint, Aperture, Loader2, Download, Camera, AlertTriangle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+// --- Seeded pseudo-random (LCG) ---
+function makePrng(seed: number) {
+  let s = Math.abs(seed) % 2147483647 || 1;
+  return () => {
+    s = (s * 16807) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
+// --- Procedural fingerprint ridge generator ---
+function drawProceduralFingerprint(
+  ctx: CanvasRenderingContext2D,
+  size: number,
+  seed: number,
+  rAvg: number,
+  gAvg: number,
+  bAvg: number
+) {
+  const rng = makePrng(seed);
+
+  // Derive a warm-gold hue leaning from skin tone
+  const skinHue = Math.atan2(bAvg - gAvg, rAvg - gAvg) * (180 / Math.PI);
+  const ridgeHue = ((skinHue + 40) % 360 + 360) % 360; // shift toward gold
+
+  // Pattern type: 0=arch, 1=left loop, 2=right loop, 3=whorl
+  const patternType = Math.floor(rng() * 4);
+
+  // Core and delta positions (jittered from center)
+  const cx = size * (0.5 + (rng() - 0.5) * 0.15);
+  const cy = size * (0.48 + (rng() - 0.5) * 0.1);
+
+  const numRidges = 22 + Math.floor(rng() * 10);
+  const ridgeSpacing = (size * 0.44) / numRidges;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+
+  for (let r = 0; r < numRidges; r++) {
+    const t = r / numRidges; // 0 → 1
+    const radius = ridgeSpacing * (r + 1);
+    const alpha = 0.55 + rng() * 0.35;
+    const lineW = 0.8 + rng() * 0.7;
+
+    ctx.beginPath();
+    ctx.lineWidth = lineW;
+    ctx.strokeStyle = `hsla(${ridgeHue + rng() * 8}, 85%, 65%, ${alpha})`;
+
+    const steps = 120;
+    for (let step = 0; step <= steps; step++) {
+      const angle = (step / steps) * Math.PI * 2;
+
+      // Flow field distortion based on pattern type
+      let distortion = 0;
+      if (patternType === 0) {
+        // Arch: flatten bottom, arch top
+        distortion = -Math.sin(angle) * radius * (0.3 + t * 0.25);
+      } else if (patternType === 1) {
+        // Left loop: loop to the right
+        distortion = Math.sin(angle + t * 1.2) * radius * 0.45;
+      } else if (patternType === 2) {
+        // Right loop
+        distortion = Math.sin(angle - t * 1.2) * radius * 0.45;
+      } else {
+        // Whorl: spiral inward
+        distortion = Math.sin(angle * 2 + r * 0.3) * radius * 0.12;
+      }
+
+      // Micro-noise for organic irregularity — seeded so it's stable per frame
+      const noise = (rng() - 0.5) * ridgeSpacing * 0.6;
+
+      const rd = radius + distortion + noise;
+      const x = cx + rd * Math.cos(angle);
+      const y = cy + rd * Math.sin(angle) * 0.75; // slight vertical compression
+
+      if (step === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  // Add a subtle radial vignette to focus the eye on the center
+  const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.55);
+  gradient.addColorStop(0, 'rgba(0,0,0,0)');
+  gradient.addColorStop(0.7, 'rgba(0,0,0,0)');
+  gradient.addColorStop(1, 'rgba(0,0,0,0.85)');
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+
+  ctx.restore();
+}
+
 export default function App() {
   const [status, setStatus] = useState<
     'idle' | 'initializing' | 'camera_ready' | 'scanning' | 'complete' | 'error'
@@ -128,56 +222,72 @@ export default function App() {
 
         ctx.putImageData(outputData, 0, 0);
 
-        // Accumulate frames during scanning phase
-        if (statusRef.current === 'scanning' && accumCanvasRef.current) {
-          const accumCtx = accumCanvasRef.current.getContext('2d');
-          if (accumCtx) {
-            accumCtx.globalCompositeOperation = 'screen';
-            accumCtx.globalAlpha = 0.04;
-            accumCtx.drawImage(canvas, 0, 0);
-            scanFrameCountRef.current++;
+        // Accumulate frames during scanning phase — sample pixels to build a unique seed
+        if (statusRef.current === 'scanning') {
+          scanFrameCountRef.current++;
 
-            if (scanFrameCountRef.current >= SCAN_FRAMES) {
-              // Build final composite from accumulated data + current video frame
-              const accumCanvas = accumCanvasRef.current;
-              const OUT_SIZE = 512;
-              const finalCanvas = document.createElement('canvas');
-              finalCanvas.width = OUT_SIZE;
-              finalCanvas.height = OUT_SIZE;
-              const fCtx = finalCanvas.getContext('2d');
-
-              if (fCtx) {
-                fCtx.fillStyle = '#0e0e0e';
-                fCtx.fillRect(0, 0, OUT_SIZE, OUT_SIZE);
-
-                // Darkened video frame as background
-                fCtx.save();
-                fCtx.filter = 'grayscale(80%) contrast(150%) brightness(30%)';
-                fCtx.translate(OUT_SIZE, 0);
-                fCtx.scale(-1, 1);
-                const minDimF = Math.min(video.videoWidth, video.videoHeight);
-                const startXF = (video.videoWidth - minDimF) / 2;
-                const startYF = (video.videoHeight - minDimF) / 2;
-                fCtx.drawImage(video, startXF, startYF, minDimF, minDimF, 0, 0, OUT_SIZE, OUT_SIZE);
-                fCtx.restore();
-
-                // Overlay accumulated ridge pattern
-                fCtx.filter = 'none';
-                fCtx.globalCompositeOperation = 'screen';
-                fCtx.drawImage(accumCanvas, 0, 0, OUT_SIZE, OUT_SIZE);
-              }
-
-              setCapturedImage(finalCanvas.toDataURL('image/png', 0.9));
-              setStatus('complete');
-
-              if (video.srcObject) {
-                const stream = video.srcObject as MediaStream;
-                stream.getTracks().forEach((track) => track.stop());
-              }
-
-              animationFrameId.current = null;
-              return;
+          // Sample every 5th frame to build the seed incrementally
+          if (scanFrameCountRef.current % 5 === 0) {
+            const frameData = ctx.getImageData(0, 0, SIZE, SIZE).data;
+            let rSum = 0, gSum = 0, bSum = 0, samples = 0;
+            for (let i = 0; i < frameData.length; i += 16) {
+              rSum += frameData[i];
+              gSum += frameData[i + 1];
+              bSum += frameData[i + 2];
+              samples++;
             }
+            // Accumulate into the ref as a float
+            const existing = (accumCanvasRef.current as unknown as { seed?: number })?.seed ?? 0;
+            const newContrib = (rSum * 3 + gSum * 5 + bSum * 7 + scanFrameCountRef.current * 11) / samples;
+            if (accumCanvasRef.current) {
+              (accumCanvasRef.current as unknown as { seed: number }).seed = existing + newContrib;
+            }
+          }
+
+          if (scanFrameCountRef.current >= SCAN_FRAMES) {
+            const seedRaw = (accumCanvasRef.current as unknown as { seed?: number })?.seed ?? Date.now();
+
+            // Sample current frame for skin hue
+            const frameData = ctx.getImageData(0, 0, SIZE, SIZE).data;
+            let rAvg = 0, gAvg = 0, bAvg = 0, n = 0;
+            for (let i = 0; i < frameData.length; i += 16) {
+              rAvg += frameData[i]; gAvg += frameData[i + 1]; bAvg += frameData[i + 2]; n++;
+            }
+            rAvg /= n; gAvg /= n; bAvg /= n;
+
+            // Build final fingerprint canvas
+            const OUT_SIZE = 512;
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = OUT_SIZE;
+            finalCanvas.height = OUT_SIZE;
+            const fCtx = finalCanvas.getContext('2d')!;
+
+            // Dark background
+            fCtx.fillStyle = '#0a0a0a';
+            fCtx.fillRect(0, 0, OUT_SIZE, OUT_SIZE);
+
+            // Draw subtle darkened video frame
+            fCtx.save();
+            fCtx.filter = 'grayscale(100%) brightness(20%) contrast(200%)';
+            fCtx.translate(OUT_SIZE, 0);
+            fCtx.scale(-1, 1);
+            const minDimF = Math.min(video.videoWidth, video.videoHeight);
+            const startXF = (video.videoWidth - minDimF) / 2;
+            const startYF = (video.videoHeight - minDimF) / 2;
+            fCtx.drawImage(video, startXF, startYF, minDimF, minDimF, 0, 0, OUT_SIZE, OUT_SIZE);
+            fCtx.restore();
+
+            // Draw procedural ridges seeded by camera data
+            drawProceduralFingerprint(fCtx, OUT_SIZE, seedRaw, rAvg, gAvg, bAvg);
+
+            setCapturedImage(finalCanvas.toDataURL('image/png', 0.9));
+            setStatus('complete');
+
+            if (video.srcObject) {
+              (video.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+            }
+            animationFrameId.current = null;
+            return;
           }
         }
       }
@@ -189,14 +299,10 @@ export default function App() {
   };
 
   const startAccumulation = () => {
-    const SIZE = 256;
-    const accumCanvas = document.createElement('canvas');
-    accumCanvas.width = SIZE;
-    accumCanvas.height = SIZE;
-    const accumCtx = accumCanvas.getContext('2d')!;
-    accumCtx.fillStyle = '#000000';
-    accumCtx.fillRect(0, 0, SIZE, SIZE);
-    accumCanvasRef.current = accumCanvas;
+    // Reset the accumulation ref (we only use it as a seed store now)
+    const holder = document.createElement('canvas') as HTMLCanvasElement & { seed: number };
+    holder.seed = 0;
+    accumCanvasRef.current = holder;
     scanFrameCountRef.current = 0;
     setStatus('scanning');
   };
