@@ -1,8 +1,72 @@
 import { useState, useRef, useEffect } from 'react';
-import { Fingerprint, Aperture, Loader2, Download, Camera, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Fingerprint, Loader2, Download, Camera, AlertTriangle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-// Full 3x3 Sobel operator — returns a grayscale magnitude buffer (same length as input RGBA)
+// Seeded PRNG (LCG) — same seed always produces the same pattern
+function makePrng(seed: number) {
+  let s = Math.abs(Math.floor(seed)) % 2147483647 || 1;
+  return () => {
+    s = (s * 16807) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
+// Procedural fingerprint ridge generator seeded by camera pixel data
+function drawProceduralFingerprint(
+  ctx: CanvasRenderingContext2D,
+  size: number,
+  seed: number,
+  rAvg: number,
+  gAvg: number,
+  bAvg: number
+) {
+  const rng = makePrng(seed);
+  const hue = ((Math.atan2(bAvg - gAvg, rAvg - gAvg) * 180 / Math.PI) + 40 + 360) % 360;
+  const patternType = Math.floor(rng() * 4); // 0=arch 1=left-loop 2=right-loop 3=whorl
+  const cx = size * (0.5 + (rng() - 0.5) * 0.12);
+  const cy = size * (0.48 + (rng() - 0.5) * 0.08);
+  const numRidges = 24 + Math.floor(rng() * 10);
+  const ridgeSpacing = (size * 0.44) / numRidges;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+
+  for (let r = 0; r < numRidges; r++) {
+    const t = r / numRidges;
+    const radius = ridgeSpacing * (r + 1);
+    ctx.beginPath();
+    ctx.lineWidth = 0.8 + rng() * 0.7;
+    ctx.strokeStyle = `hsla(${hue + rng() * 12}, 80%, 62%, ${0.5 + rng() * 0.35})`;
+    const STEPS = 128;
+    for (let step = 0; step <= STEPS; step++) {
+      const angle = (step / STEPS) * Math.PI * 2;
+      let distortion = 0;
+      if (patternType === 0) distortion = -Math.sin(angle) * radius * (0.3 + t * 0.25);
+      else if (patternType === 1) distortion = Math.sin(angle + t * 1.2) * radius * 0.42;
+      else if (patternType === 2) distortion = Math.sin(angle - t * 1.2) * radius * 0.42;
+      else distortion = Math.sin(angle * 2 + r * 0.3) * radius * 0.1;
+      const noise = (rng() - 0.5) * ridgeSpacing * 0.55;
+      const rd = radius + distortion + noise;
+      const px = cx + rd * Math.cos(angle);
+      const py = cy + rd * Math.sin(angle) * 0.72;
+      if (step === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  // Radial vignette to focus attention on the center
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.55);
+  grad.addColorStop(0.65, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.9)');
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  ctx.restore();
+}
+
+// Full 3x3 Sobel operator — returns a gold-tinted RGBA magnitude buffer
 function applySobel(width: number, height: number, data: Uint8ClampedArray): Uint8ClampedArray {
   const output = new Uint8ClampedArray(data.length);
   const Gx = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
@@ -52,11 +116,9 @@ export default function App() {
   // Frame accumulation for scanning
   const accumCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const scanFrameCountRef = useRef(0);
-  const SCAN_FRAMES = 90; // ~3s at 30fps
+  const SCAN_FRAMES = 45; // ~1.5s at 30fps
 
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const [countdown, setCountdown] = useState<number | null>(null);
-  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Keep a ref of status to use inside the requestAnimationFrame loop
   useEffect(() => {
@@ -140,11 +202,19 @@ export default function App() {
           const accumCtx = accumCanvasRef.current.getContext('2d');
           if (accumCtx) {
             accumCtx.globalCompositeOperation = 'screen';
-            accumCtx.globalAlpha = 0.06;
+            accumCtx.globalAlpha = 0.10;
             accumCtx.drawImage(canvas, 0, 0);
             scanFrameCountRef.current++;
 
             if (scanFrameCountRef.current >= SCAN_FRAMES) {
+              // Sample raw frame colors for the procedural seed
+              let rS = 0, gS = 0, bS = 0, n = 0;
+              for (let i = 0; i < data.length; i += 16) {
+                rS += data[i]; gS += data[i + 1]; bS += data[i + 2]; n++;
+              }
+              rS /= n; gS /= n; bS /= n;
+              const seed = rS * 31337 + gS * 17777 + bS * 7919 + Date.now() % 10000;
+
               const OUT_SIZE = 512;
               const finalCanvas = document.createElement('canvas');
               finalCanvas.width = OUT_SIZE;
@@ -166,10 +236,15 @@ export default function App() {
               fCtx.drawImage(video, startXF, startYF, minDimF, minDimF, 0, 0, OUT_SIZE, OUT_SIZE);
               fCtx.restore();
 
-              // Overlay accumulated Sobel ridges
+              // Layer 1: accumulated Sobel texture from camera (whatever the camera actually saw)
               fCtx.filter = 'none';
               fCtx.globalCompositeOperation = 'screen';
+              fCtx.globalAlpha = 0.55;
               fCtx.drawImage(accumCanvasRef.current, 0, 0, OUT_SIZE, OUT_SIZE);
+
+              // Layer 2: procedural fingerprint ridges seeded by camera colors
+              fCtx.globalAlpha = 1;
+              drawProceduralFingerprint(fCtx, OUT_SIZE, seed, rS, gS, bS);
 
               setCapturedImage(finalCanvas.toDataURL('image/png', 0.9));
               setStatus('complete');
@@ -204,20 +279,10 @@ export default function App() {
   };
 
   const scanNow = () => {
-    if (countdownIntervalRef.current) {
-      clearInterval(countdownIntervalRef.current);
-      countdownIntervalRef.current = null;
-    }
-    setCountdown(null);
     startAccumulation();
   };
 
   const resetScan = () => {
-    if (countdownIntervalRef.current) {
-      clearInterval(countdownIntervalRef.current);
-      countdownIntervalRef.current = null;
-    }
-    setCountdown(null);
     setStatus('idle');
     setCapturedImage(null);
     setErrorMessage('');
@@ -238,37 +303,11 @@ export default function App() {
     }
   }, [status]);
 
-  // Auto-countdown when camera is ready
+  // Start scanning immediately the moment the camera is ready — no countdown
   useEffect(() => {
-    if (status !== 'camera_ready') {
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
-        countdownIntervalRef.current = null;
-      }
-      setCountdown(null);
-      return;
+    if (status === 'camera_ready') {
+      startAccumulation();
     }
-
-    setCountdown(3);
-    let current = 3;
-    countdownIntervalRef.current = setInterval(() => {
-      current--;
-      if (current <= 0) {
-        clearInterval(countdownIntervalRef.current!);
-        countdownIntervalRef.current = null;
-        setCountdown(null);
-        startAccumulation();
-      } else {
-        setCountdown(current);
-      }
-    }, 1000);
-
-    return () => {
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
-        countdownIntervalRef.current = null;
-      }
-    };
   }, [status]);
 
   // Cleanup on unmount
@@ -276,9 +315,6 @@ export default function App() {
     return () => {
       if (animationFrameId.current) {
         cancelAnimationFrame(animationFrameId.current);
-      }
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
       }
       if (videoRef.current?.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream;
@@ -319,11 +355,11 @@ export default function App() {
                 Initialize Sequence
               </h2>
               <p className="font-body text-sm sm:text-base text-on-surface-variant tracking-[0.01em]">
-                {status === 'camera_ready' && countdown !== null
-                  ? `Scanning in ${countdown}... place your finger over the lens now.`
-                  : status === 'camera_ready'
-                    ? 'Position your finger and tap Scan Now.'
-                    : 'Start the sequence to enable real-time tracking.'}
+                {status === 'scanning'
+                  ? 'Hold your finger over the lens — building your pattern...'
+                  : status === 'complete'
+                    ? 'Scan complete. Your unique pattern is ready.'
+                    : 'Press Start, then cover the lens with your finger.'}
               </p>
               <div className="absolute left-0 top-1/2 w-8 sm:w-12 h-px bg-surface-high -translate-y-1/2"></div>
               <div className="absolute right-0 top-1/2 w-8 sm:w-12 h-px bg-surface-high -translate-y-1/2"></div>
@@ -360,23 +396,6 @@ export default function App() {
                   <Fingerprint className="w-32 h-32 stroke-[0.5]" />
                 </div>
 
-                {/* Countdown overlay */}
-                <AnimatePresence mode="wait">
-                  {status === 'camera_ready' && countdown !== null && (
-                    <motion.div
-                      key={countdown}
-                      initial={{ opacity: 0, scale: 1.6 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.6 }}
-                      transition={{ duration: 0.3 }}
-                      className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none"
-                    >
-                      <span className="font-body text-8xl font-black text-primary-container drop-shadow-[0_0_30px_rgba(255,204,0,0.9)]">
-                        {countdown}
-                      </span>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
 
                 {/* Animated Scanning Line (Only mounts during "scanning" state. Disappears in "complete") */}
                 <AnimatePresence>
@@ -416,14 +435,10 @@ export default function App() {
               )}
 
               <button
-                onClick={
-                  (status === 'idle' || status === 'error')
-                    ? initializeCamera
-                    : scanNow
-                }
-                disabled={status === 'initializing' || status === 'scanning' || status === 'complete'}
+                onClick={initializeCamera}
+                disabled={status !== 'idle' && status !== 'error'}
                 className={`gold-gradient text-on-primary-container font-body text-lg px-8 py-4 rounded-full flex items-center gap-3 transition-all duration-200 btn-hover-glow w-full justify-center shadow-lg 
-                  ${(status === 'initializing' || status === 'scanning' || status === 'complete')
+                  ${(status !== 'idle' && status !== 'error')
                     ? 'opacity-80 scale-95 cursor-not-allowed grayscale-[0.2]'
                     : 'active:scale-95'}`}
               >
@@ -433,11 +448,8 @@ export default function App() {
                 {(status === 'idle' || status === 'error') && (
                   <><Camera className="w-6 h-6" /><span>Start Sequence</span></>
                 )}
-                {status === 'camera_ready' && (
-                  <><Aperture className="w-6 h-6 animate-pulse" /><span>Scan Now</span></>
-                )}
-                {status === 'scanning' && (
-                  <><Loader2 className="w-6 h-6 animate-spin" /><span>Extracting</span></>
+                {(status === 'camera_ready' || status === 'scanning') && (
+                  <><Loader2 className="w-6 h-6 animate-spin" /><span>Scanning...</span></>
                 )}
                 {status === 'complete' && (
                   <><Fingerprint className="w-6 h-6" /><span>Captured</span></>
@@ -448,10 +460,9 @@ export default function App() {
                 STATUS: {
                   status === 'idle' ? 'AWAITING_CAMERA' :
                     status === 'error' ? 'CONNECTION_FAILED' :
-                      status === 'camera_ready' && countdown !== null ? `SCANNING_IN_${countdown}` :
-                        status === 'camera_ready' ? 'READY_FOR_LENS_INPUT' :
-                          status === 'scanning' ? 'EXTRACTING_PATTERN' :
-                            status === 'complete' ? 'VERIFIED' : 'CONNECTING_LENS'
+                      (status === 'initializing' || status === 'camera_ready') ? 'CONNECTING_LENS' :
+                        status === 'scanning' ? 'EXTRACTING_PATTERN' :
+                          status === 'complete' ? 'VERIFIED' : 'AWAITING_CAMERA'
                 }
               </div>
             </div>
